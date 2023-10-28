@@ -1,0 +1,110 @@
+import random
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+from datetime import date, timedelta
+import numpy as np
+
+def VarInit():
+    B_S_Factor = random.uniform(0.2, 3)
+    Transaction_Amount = random.uniform(0, 5)
+    N_Value = random.uniform(3, 365)
+    Cash = 100000
+    return {"B_S_Factor": B_S_Factor, "Transaction_Amount": Transaction_Amount, "N_Value": N_Value, "Cash": Cash}
+
+def PriceDownload(ticker, starttime):
+    try:
+        Model_Data = yf.download(ticker, start=date.today() - timedelta(days=starttime), end=date.today(), progress=False)
+    except KeyError:
+        return False
+    if Model_Data.empty:
+        return False
+    Model_Data = Model_Data["Open"].dropna().to_numpy()
+    return Model_Data
+
+def price_up_indicator(upCheck, curPrice):
+    return curPrice >= upCheck
+
+def price_down_indicator(lowCheck, curPrice):
+    return curPrice <= lowCheck
+
+def split_data(N_Value, data):
+    seen = data[:int(N_Value)]
+    simu_data = data[int(N_Value):]
+    mean = np.mean(seen)
+    STDV = np.std(data)
+    return {"simu_data": simu_data,"seen":seen, "mean": mean, "STDV": STDV}
+
+def buy(price, cash, shares, Transaction_Amount=1):
+    if cash >= price * Transaction_Amount:
+        cash -= price * Transaction_Amount
+        shares += Transaction_Amount
+    return cash, shares
+
+def sell(price, cash, shares, Transaction_Amount=1):
+    if shares >= Transaction_Amount:
+        cash += Transaction_Amount * price
+        shares -= Transaction_Amount
+    return cash, shares
+
+def portflio_init(dict,N_Value):
+    for key in dict:
+        raw_data= raw_data = PriceDownload(key, 700)
+        dict[key] = split_data(N_Value, raw_data)
+        dict[key]["shares"]=0
+        dict[key]["last_trade"]=""
+    return dict
+
+# MAIN
+Outout={"Ticker:":"","Cash":"","Shares":0,"Price":0,"B_S_Factor":0,"N_Value":0,}
+Portfolio = {
+    "GOOGL": {}, "ADBE": {}, "CRM": {}, "TXN": {}, "AMD": {}, "ADSK": {}, "PANW": {}, "MU": {},
+    "KLAC": {}, "QCOM": {}, "META": {}, "MSFT": {}, "AAPL": {}, "ADI": {}, "NXPI": {}, "AVGO": {},
+    "CTSH": {}, "INTU": {}, "ANSS": {}, "AMAT": {}, "DDOG": {}, "NVDA": {}, "WDAY": {}, "FTNT": {}
+} #This is a key with sticker, and a value of the balance of shares
+  #['simu_data', 'mean', 'STDV', 'shares',last_trade] where those are keys with values.
+
+for _ in range(10):
+    variables = VarInit()
+    cash = variables["Cash"]
+    Portfolio=portflio_init(Portfolio,int(variables["N_Value"]))
+    for i in range(700):
+        for ticker in Portfolio:
+            try:
+                price = Portfolio[ticker]["simu_data"][i]
+                up_check = Portfolio[ticker]["mean"] + variables["B_S_Factor"] * Portfolio[ticker]["STDV"]
+                low_check = Portfolio[ticker]["mean"] - variables["B_S_Factor"] * Portfolio[ticker]["STDV"]
+
+                if Portfolio[ticker]["last_trade"] == "sold" and price <= Portfolio[ticker]["mean"]:
+                    cash, Portfolio[ticker]['shares'] = buy(price, cash, Portfolio[ticker]['shares'], int(variables['Transaction_Amount']))
+                    Portfolio[ticker]["last_trade"]=""
+                if Portfolio[ticker]["last_trade"] == "bought"  and price >= Portfolio[ticker]["mean"]:
+                    cash, Portfolio[ticker]['shares'] = sell(price, cash, Portfolio[ticker]['shares'], int(variables['Transaction_Amount']))
+                    Portfolio[ticker]["last_trade"]=""
+                if price_up_indicator(up_check, price):
+                    cash, Portfolio[ticker]['shares'] = sell(price, cash, Portfolio[ticker]['shares'], int(variables['Transaction_Amount']))
+                if price_down_indicator(low_check, price):
+                    cash, Portfolio[ticker]['shares'] = buy(price, cash, Portfolio[ticker]['shares'], int(variables['Transaction_Amount']))
+                Portfolio[ticker]["seen"]=Portfolio[ticker]["seen"][:-1]
+                Portfolio[ticker]["seen"]=Portfolio[ticker]["seen"].appened(price)
+                Portfolio[ticker]["mean"]=np.meanPortfolio[ticker]["seen"]
+                Portfolio[ticker]["STDV"]=np.meanPortfolio[ticker]["seen"]
+
+            except:
+                continue
+        # print(f"cash {cash}")
+
+    portfolio_value=0
+    for tickers in Portfolio:
+        portfolio_value+=Portfolio[tickers]["shares"]*Portfolio[tickers]["simu_data"][-1]
+
+    print(f'Portfolio value:{portfolio_value+cash}')
+
+
+#Now I want to change it such that instad of focusing on one stock a year, it focuss on many.
+#It will maintain one cash balance. But needs to maintain multiple share balances.
+#I also want to make a reserves account. Its a poor name for what it will be.
+#But, what it will be is money that is made as profit. That is from the starting amount
+#everytime we are over that number, we will put the surplus into the reserve account.
+#This is my first implmentation of risk mangmnet. Otheres will need ot be incorported as well.
+#Apprantly I was noit updated mean and STDV
