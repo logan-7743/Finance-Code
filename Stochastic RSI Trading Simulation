@@ -1,0 +1,302 @@
+import random
+import numpy as np
+import yfinance as yf
+from datetime import date, timedelta
+import random
+
+
+for _x_ in range(200):
+    class ticker():
+        def __init__(self,name):
+            self.name=name
+            self.rs_arr=[]
+            self.rsi_arr=[]
+            self.stoch_rsi_arr=[]
+            self.last_stoch_rsi_trade='sold'
+            self.last_stdv_trade='sold'
+            self.seen_prices_arr=[]
+            self.mean=0
+            self.stdv=0
+            self.trades=0 
+            self.stock_rsi_trades=0
+            self.stdv_trades=0
+            self.open_arr=[]
+            self.close_arr=[]
+            self.high_arr=[]
+            self.low_arr=[]
+            self.shares=0
+
+    interval_arr=["1m","2m","5m","15m","30m","60m","90m","1h","1d"]
+#Other variables
+    transaction_amnt = 1; rsi_sell_threshhold = random.uniform(.51,.9); rsi_buy_threshhold = random.uniform(.1,.49)
+    rsi_period = random.randint(5,30); stoch_rsi_period = random.randint(5,30); num_of_tickers = 5; num_of_trade = 100
+    today = "23-10-27"; interval = "1d"; n_size = random.randint(5,50); stdv_bs_factor = random.uniform(.3,4)
+    cash = random.randint(1000,1000000); days=30; starting_cash=cash
+
+
+    stock_list_temp = ['AAPL', 'MSFT', 'GOOGL', 'AMZN']
+
+    #choose a randome ticker in the compelete list of tickers
+    stock_list_rand=[]
+    for i in range(4):
+        # indx = random.randint(0,len(stock_list_temp)-1)
+        stock_list_rand.append(stock_list_temp[i])
+
+    #Start to build our portfolio. This step is construct the datastructre "Ticker" for all stocks we have selected
+    #First we try and download the ticker info, if we cannot, then just dont add it to our portfolio
+    #Next we take the stock data from yfinance and start it in our class
+    portfolio=[]
+    for cur_stock_indx in range(len(stock_list_rand)):
+        try:
+            dict = (yf.download(stock_list_rand[cur_stock_indx], start=date.today() - timedelta(days=30), end=date.today(), progress=False, interval="1d")).to_dict(orient='list')
+        except Exception as e:
+            print("Threw this out \n",e)
+            continue
+
+        portfolio.append(ticker(stock_list_rand[cur_stock_indx]))
+        portfolio[cur_stock_indx].open_arr  = dict["Open"]
+        portfolio[cur_stock_indx].close_arr = dict["Close"]
+        portfolio[cur_stock_indx].high_arr  = dict["High"]
+        portfolio[cur_stock_indx].low_arr   = dict["Low"]
+
+    #rs_val is the main facotor in our calculation in for stochastic RSI
+    #The formula for RS is sum(price_up)/sum(price_down)
+    #For example if price rised 10 doallrs during one peiord, the $10 would be a factor in sum(price_up)
+    #This is only for a peiord of time, usally 14. So only use the past amount of days in the peiord (such as 14)
+    #Were only storing the indvudal data, we will do actull calculation for RSI
+    def rs_val(price_diff, stock, rsi_period):
+        if len(stock.rs_arr) >= rsi_period: stock.rs_arr = stock.rs_arr[1:]
+        return price_diff
+
+    #RSI will be the "momentem of the stock". Its calculated as 100-100/(1+rs)
+    #This then goes into calculating the stochastic RSI.
+    #The period for stoahcstic RSI is not the same has the peiord for calcuting 
+    def rsi_val(stock, rsi_period):
+        rs_arr=stock.rs_arr
+        rsi_arr=stock.rsi_arr
+
+        if len(rsi_arr) >= rsi_period: rsi_arr=rsi_arr[1:]
+
+        sum_gain=0
+        sum_loss=0
+
+        for rs_indx in range(len(rs_arr)):
+            #Formula : rs=sum(gain)/sum(loss), rsi=100-100/(1+rs)
+            if float(rs_arr[rs_indx])>=0: sum_gain += rs_arr[rs_indx]
+            else:                         sum_loss += abs(rs_arr[rs_indx])
+        
+        #Dont get a divide by 0 error
+        if sum_gain > 0 and sum_loss>0: 
+            rs = sum_gain / sum_loss
+            rsi = 100 - (100 / (1 + rs))
+        else: return
+        return rsi
+
+    #Stoch RSI is what we use as the actul indicator for buying and sell with the
+    #RSI method. It is a fomrula that is more a bit more senstive the regualr RSI
+    #Therefore has a bit high sell and lower buy triggers
+    #The formula is (RIS_cur-RSI_min)/(RSI+max - RSI_min
+    #The period of which to calcualte the min and max will not nessicarly be the 
+    #same as RS vals, but that should have been taken care of in the RSI function 
+    def stoch_val(stock):
+        rsi_arr = stock.rsi_arr
+
+        if len(rsi_arr)>0:
+            rsi_arr = [x for x in rsi_arr if x is not None]
+            min_rsi = min(rsi_arr)  # Get the most recent 14 RSI values
+            max_rsi = max(rsi_arr)
+            cur_rsi = rsi_arr[-1]
+            stoch_rsi = (cur_rsi - min_rsi) / (max_rsi - min_rsi)
+            return stoch_rsi
+        
+        return
+
+    #buy is to decrease cash increase shares
+    # if we want to spend 100 and price is 10, buy 10 (100/20; cash to spend / price)    
+    def buy(price, cash, shares, Transaction_Amount=1):
+        if cash >= price * Transaction_Amount:
+            cash -= price * Transaction_Amount
+            shares += Transaction_Amount
+        return cash, shares
+
+    def sell(price, cash, shares, Transaction_Amount=1):
+        if shares >= Transaction_Amount:
+            cash += Transaction_Amount * price
+            shares -= Transaction_Amount
+        return cash, shares
+
+    #This will calculate a moving average, peiord will be defiend at the 
+    #Begging of the code
+    def my_mean(stock, n_size):
+        data = stock.seen_prices_arr
+
+        if len(data) > n_size:
+            data = data[len(data)-n_size:] 
+
+        mean = np.mean(data)
+        return mean
+
+    #Moving STDV very simiar function to the mean
+
+    def my_stdv(stock, n_size):
+        data = stock.seen_prices_arr
+
+        if len(data) > n_size:
+            data = data[len(data)-n_size:]
+
+        stdv = np.std(data)
+        return stdv
+
+
+    '''THis is the fucntion that will check if we have met the indcator.
+    i.e. is the cur stoch rsi <= rsi buy varible or is it >= rsi sel var.
+    If it is one of those, buy or sell respectivly. Things that can change from
+    thucntion are cash, shares, tickers trades and tickers last trade'''
+    def stoch_rsi_buy_sell(stock, cash, price,transaction_amnt, rsi_sell_threshhold, rsi_buy_threshhold):
+        ticker = stock.name
+
+        #Check buy sell markers from stochastic rsi
+        cur_stoch_rsi=stock.stoch_rsi_arr[-1]
+        if cur_stoch_rsi >= rsi_sell_threshhold: #and stock.last_stoch_rsi_trade == "bought": 
+            temp_shares = stock.shares
+            cash, stock.shares = sell(cash,stock.shares,price)
+            stock.last_stoch_rsi_trade  = "sold"
+            # stock.trades += 1; print(f"Line 174. sold {ticker} from Stochastic RSI indactor. Stock_RSI = {round(cur_stoch_rsi,2)}, price = {round(price,2)}, shares sold = {round(temp_shares,2)}")
+            stock.stock_rsi_trades += 1
+
+        if cur_stoch_rsi <= rsi_buy_threshhold: #and stock.last_stoch_rsi_trade =="sold":
+            cash,stock.shares = buy(cash,stock.shares, price, transaction_amnt)
+            stock.last_stoch_rsi_trade  = "bought"
+            # stock.trades += 1; print(f"Line 180. bought {round(ticker,2)} from Stochastic RSI indactor, Stock_RSI = {round(cur_stoch_rsi,2)}, price = {round(price,2)}, shares bought = {round(stock.shares,2)}")
+            stock.stock_rsi_trades += 1
+        
+        return stock, cash
+
+    '''This is the fucntion that checks if we should buy or sell based of 
+    our STDV indicator, namley is current price at a point we we should buy or sell
+    Things that can change in here: cash, shares, stock.stdv_trades, stock.trades, stock.last_stdv_trade
+    So, it should return the ticker, cash and shares  '''
+    def stdv_buy_sell(stock, cash, n_size, stdv_bs_factor,price,transaction_amnt):
+        stock.mean = my_mean(stock, n_size)
+        stock.stdv = my_stdv(stock, n_size)
+        ticker     = stock.name
+        bs_indactor= stock.stdv*stdv_bs_factor
+
+
+        if price >= bs_indactor + stock.mean: #and stock.last_stdv_trade == "bought": #prices is high,sell
+            temp_shares=stock.shares
+            cash, stock.shares = sell(cash,stock.shares,price)
+            stock.last_stdv_trade = "sold"
+            # stock.trades += 1; print(f"sold {ticker} from STDV indactor with bs indactor = {round(bs_indactor + stock.mean,2)}. price = {round(price,2)}, shares sold = {round(temp_shares,2)}, mean = {round(stock.mean,2)}, stdv = {round(stock.stdv,2)}"); stock.stdv_trades+= 1
+
+        if price <= stock.mean - bs_indactor: #and stock.last_stdv_trade == "sold":  #price is low,buy
+            cash,stock.shares = buy(cash,stock.shares,price,transaction_amnt)
+            stock.last_stdv_trade = "bought"
+            # stock.trades += 1; print(f"bought {ticker} from STDV indactor with bs indactor = {round(stock.mean - bs_indactor,2)}. Price = {round(price,2)} shares bough = {round(stock.shares,2)}, mean = {round(stock.mean,2)}, stdv = {round(stock.stdv,2)}"); stock.stdv_trades += 1
+
+        return stock, cash
+    ###___MAIN___###
+
+    #If one of our tickers in our portiflio cannot make it through the begining of the algorthiu,
+    #Just remove it. But, we will start with calcuting the first RS peiord, because we cannot
+    #Calcute RSI or stoch RSI without during this first
+    remove=set()
+    for period_indx in range(rsi_period):
+        for portfolio_indx in range(len(portfolio)):
+            try:
+                price_dif=portfolio[portfolio_indx].close_arr[period_indx] - portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx].rs_arr.append(rs_val(price_dif,portfolio[portfolio_indx],rsi_period))
+                #keep track of seen data
+                cur_price=portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx].seen_prices_arr.append(cur_price)
+            except Exception as e:
+                print("Threw this out \n",e)
+                remove.add(portfolio_indx)
+                continue
+
+    #Now, we will calculate enough RSI values that we can then calcute the first stocastic RSI
+    #We aslo need to keep calculating RS values
+    #Again if a ticker cannot make it thorugh this peiord remove it. 
+    for period_indx in range(rsi_period,rsi_period+stoch_rsi_period):
+        try:
+            for portfolio_indx in range(len(portfolio)):
+                #add rsi data
+                portfolio[portfolio_indx].rsi_arr.append(rsi_val(portfolio[portfolio_indx],rsi_period))
+                #add rs data
+                price_dif=portfolio[portfolio_indx].close_arr[period_indx] - portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx].rs_arr.append(rs_val(price_dif,portfolio[portfolio_indx],rsi_period))
+                cur_price=portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx].seen_prices_arr.append(cur_price)
+        except Exception as e:
+            print("Threw this out \n",e)
+            remove.add(portfolio_indx)
+            continue
+
+    #The actul removing of ticers that did not make it
+    for portfolio_indx in range(len(remove)):
+        portfolio.pop(portfolio_indx)
+
+    #Thick of the algortium. Start by calculating Stochastic ROI
+    #Then try and buy and sell. Then calculate RS and RSI. Repet
+    trades=0
+    remove_tickers_with_value=[]
+    removed_tickers_indx=[]
+    for period_indx in range(rsi_period+stoch_rsi_period, len(portfolio[0].open_arr)):
+        #So j is the period we are on, i is the portfolio we are looking at
+        for portfolio_indx in range(len(portfolio)):
+                
+            if trades>=num_of_trade:break
+            
+            try:
+            #add rsi data
+                portfolio[portfolio_indx].stoch_rsi_arr.append(stoch_val(portfolio[portfolio_indx]))
+                cur_trades = portfolio[portfolio_indx].trades
+                
+                #buy and sell if applicable, update dictonry
+                price = portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx], cash = stoch_rsi_buy_sell(portfolio[portfolio_indx], cash, price,transaction_amnt, rsi_sell_threshhold, rsi_buy_threshhold)
+                portfolio[portfolio_indx], cash = stdv_buy_sell(portfolio[portfolio_indx], cash, n_size, stdv_bs_factor,price,transaction_amnt)
+            
+                #add rs
+                price_dif = portfolio[portfolio_indx].close_arr[period_indx]-portfolio[portfolio_indx].open_arr[period_indx]
+
+                #update seen prices
+                cur_price=portfolio[portfolio_indx].open_arr[period_indx]
+                portfolio[portfolio_indx].seen_prices_arr.append(cur_price)      
+
+                #add rsi
+                portfolio[portfolio_indx].rsi_arr.append(rsi_val(portfolio[portfolio_indx],rsi_period))
+
+                #add new trades that was made to out trade couter
+                trades+=portfolio[portfolio_indx].trades-cur_trades
+
+            except Exception as e:
+                #Some stocks may not have as much data as others. So we will stop trying to 
+                #trade them of that is that case. But at this point, we may have already traded
+                #them, so dont for get about the shares we might own.
+                print("Threw this out:",e)
+                removed_tickers_indx.append(portfolio_indx)  # Append the index to the list
+                remove_tickers_with_value.append(portfolio[portfolio_indx])
+
+    # After the loop, remove stocks using the collected indices
+    for remove_indx in reversed(sorted(removed_tickers_indx)):
+        if remove_indx < len(portfolio):
+            print(f'threw out {portfolio[remove_indx].name}')
+            portfolio.pop(remove_indx)
+    
+    portfolio_return=0
+    for portfolio_indx in range(len(portfolio)):
+        portfolio_return+=portfolio[portfolio_indx].shares*portfolio[portfolio_indx].close_arr[-1]
+
+    for portfolio_indx in range(len(remove_tickers_with_value)):
+        portfolio_return+=remove_tickers_with_value[portfolio_indx].shares*remove_tickers_with_value[portfolio_indx].close_arr[-1]
+
+    portfolio_return=(portfolio_return+cash-starting_cash)/starting_cash*100
+    print(round(portfolio_return,2),"%")
+
+
+
+
+    
+
+print("done")
