@@ -1,0 +1,49 @@
+def support(x):
+    #Takes in a data frame and adds support indicator and plot points
+    #We need to avoid looking in to the futre. so we are at out current point, but move to the past to treat the past as cur and cur as the end.
+    #If we want to molook two candels ahead and two candels back then we we need this transion : h h h h cur --> h h new_cur h h 
+    #The data is in the same orde the pointers are not.
+    x["support"] = [0] * len(x)
+    x["support_point"] = [0] * len(x)
+    last_support = 0
+
+    for i in range(sup_res_window*2, len(x)):
+
+        temp_cur_idx = i - sup_res_window
+        sup = 2
+        
+        for left_idx in range(temp_cur_idx - sup_res_window, temp_cur_idx):
+            if not x.Low[left_idx] > x.Low[left_idx+1]: sup=0
+
+        for right_idx in range(temp_cur_idx,temp_cur_idx+sup_res_window):
+            if not x.Low[right_idx] < x.Low[right_idx+1]: sup=0
+
+        x.support[temp_cur_idx] = sup
+        if sup==2: 
+            x.support_point[temp_cur_idx] = x.Low[temp_cur_idx]
+            last_support = x.support_point[temp_cur_idx]
+        else: x.support_point[temp_cur_idx] = last_support
+            
+    return x
+
+def resistance(x):
+    x["resistance"] = [0] * len(x)
+    x["resistance_point"] = [0] * len(x)
+    last_resistance = 0
+
+    for i in range(sup_res_window*2, len(x)):
+        temp_cur_idx = i - sup_res_window
+        res = 1
+
+        for left_idx in range(temp_cur_idx - sup_res_window, temp_cur_idx):
+            if not x.High[left_idx] < x.High[left_idx+1]: res = 0
+
+        for right_idx in range(temp_cur_idx,temp_cur_idx+sup_res_window):
+            if not x.High[right_idx] > x.High[right_idx+1]: res = 0
+        
+        x.resistance[temp_cur_idx] = res
+        if res == 1: 
+            x.resistance_point[temp_cur_idx] = x.High[temp_cur_idx]
+            last_resistance = x.resistance_point[temp_cur_idx]
+        else: x.resistance_point[temp_cur_idx] = last_resistance
+    return x
